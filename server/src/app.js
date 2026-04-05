@@ -7,7 +7,7 @@ import { uploadRouter } from "./routes/upload.js";
 
 const { corsOrigins, uiUrl } = getServerConfig();
 
-export const app = express();
+const app = express();
 
 app.use(
   cors({
@@ -88,3 +88,5 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+export default app;
