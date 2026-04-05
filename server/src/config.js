@@ -1,4 +1,4 @@
-/** @returns {{ port: number; corsOrigins: string[] }} */
+/** @returns {{ port: number; corsOrigins: string[]; uiUrl: string }} */
 export function getServerConfig() {
   const port = Number(process.env.PORT) || 9555;
   const corsOrigins = (
@@ -8,5 +8,6 @@ export function getServerConfig() {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  return { port, corsOrigins };
+  const uiUrl = process.env.UI_URL?.trim() || corsOrigins[0] || "http://localhost:5173";
+  return { port, corsOrigins, uiUrl };
 }
