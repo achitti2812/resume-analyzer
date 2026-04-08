@@ -55,6 +55,10 @@ function ActionButton({
           className="info-trigger"
           aria-label={`About ${label}`}
           aria-expanded={isInfoOpen}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           onClick={toggleInfo}
         >
           i
@@ -115,15 +119,15 @@ export default function App() {
   useEffect(() => {
     if (!openActionInfo) return undefined;
 
-    function handlePointerDown(event) {
+    function handleDocumentClick(event) {
       const target = event.target;
       if (!(target instanceof Element) || !target.closest(".action-item")) {
         setOpenActionInfo(null);
       }
     }
 
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
   }, [openActionInfo]);
 
   const uploadPdf = useCallback(async () => {
