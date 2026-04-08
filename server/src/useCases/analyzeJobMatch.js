@@ -4,6 +4,11 @@ import {
   generateTailoredResumeWithAi,
 } from "../adapters/aiAnalyzer.js";
 import { AppError } from "../domain/errors.js";
+import {
+  buildInvalidJdResponse,
+  isValidJD,
+} from "./validateJobDescription.js";
+import { buildResumeRejection, isResume } from "./validateResumeText.js";
 
 /**
  * @param {string} resumeText
@@ -23,7 +28,25 @@ export async function analyzeJobMatch(resumeText, jobDescription) {
 async function analyzeJobTextInput(resumeText, jobDescription, handler) {
   const cleanResume = normalizeTextInput(resumeText, "resumeText");
   const cleanJobDescription = normalizeTextInput(jobDescription, "jobDescription");
-  return handler(cleanResume, cleanJobDescription);
+  const jdValidation = isValidJD(cleanJobDescription);
+  if (!jdValidation.isValidJD) {
+    return buildInvalidJdResponse();
+  }
+  const validation = await isResume(cleanResume);
+  if (!validation.isResume) {
+    return buildResumeRejection(validation.reason);
+  }
+  try {
+    return await handler(cleanResume, cleanJobDescription);
+  } catch (error) {
+    if (
+      error instanceof AppError &&
+      error.message === "Insufficient job description to perform analysis."
+    ) {
+      return buildInvalidJdResponse();
+    }
+    throw error;
+  }
 }
 
 /**

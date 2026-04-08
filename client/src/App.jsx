@@ -1,10 +1,70 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /** Same origin in dev (Vite proxies /api and /upload). Set VITE_API_URL when API is on another host. */
 const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
 function Spinner() {
   return <span className="spinner" aria-hidden />;
+}
+
+function ActionButton({
+  actionId,
+  label,
+  description,
+  onClick,
+  disabled,
+  loading,
+  loadingLabel,
+  variant,
+  openActionInfo,
+  setOpenActionInfo,
+  buttonType = "button",
+}) {
+  const isInfoOpen = openActionInfo === actionId;
+
+  const toggleInfo = useCallback(
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpenActionInfo((current) => (current === actionId ? null : actionId));
+    },
+    [actionId, setOpenActionInfo]
+  );
+
+  return (
+    <div className={`action-item${isInfoOpen ? " action-item--info-open" : ""}`}>
+      <div className="action-control">
+        <button
+          type={buttonType}
+          onClick={onClick}
+          disabled={disabled}
+          className={`btn ${variant === "primary" ? "btn--primary" : "btn--ghost"}`}
+          title={description}
+        >
+          {loading ? (
+            <>
+              <Spinner />
+              {loadingLabel}
+            </>
+          ) : (
+            label
+          )}
+        </button>
+        <button
+          type="button"
+          className="info-trigger"
+          aria-label={`About ${label}`}
+          aria-expanded={isInfoOpen}
+          onClick={toggleInfo}
+        >
+          i
+        </button>
+      </div>
+      <span className="action-tooltip" role="tooltip">
+        {description}
+      </span>
+    </div>
+  );
 }
 
 export default function App() {
@@ -21,6 +81,9 @@ export default function App() {
   const [matchResult, setMatchResult] = useState(null);
   const [suggestionsResult, setSuggestionsResult] = useState(null);
   const [tailoredResumeResult, setTailoredResumeResult] = useState(null);
+  const [resumeValidationMessage, setResumeValidationMessage] = useState(null);
+  const [jobDescriptionValidationMessage, setJobDescriptionValidationMessage] = useState(null);
+  const [openActionInfo, setOpenActionInfo] = useState(null);
 
   const busy =
     loadingUpload ||
@@ -38,12 +101,30 @@ export default function App() {
     setMatchResult(null);
     setSuggestionsResult(null);
     setTailoredResumeResult(null);
+    setResumeValidationMessage(null);
+    setJobDescriptionValidationMessage(null);
+    setOpenActionInfo(null);
   }, []);
 
   const onJobDescriptionChange = useCallback((e) => {
     setJobDescription(e.target.value);
     setError(null);
+    setJobDescriptionValidationMessage(null);
   }, []);
+
+  useEffect(() => {
+    if (!openActionInfo) return undefined;
+
+    function handlePointerDown(event) {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest(".action-item")) {
+        setOpenActionInfo(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [openActionInfo]);
 
   const uploadPdf = useCallback(async () => {
     if (!file) {
@@ -52,6 +133,8 @@ export default function App() {
     }
     setLoadingUpload(true);
     setError(null);
+    setResumeValidationMessage(null);
+    setJobDescriptionValidationMessage(null);
     setExtractedText(null);
     try {
       const body = new FormData();
@@ -85,6 +168,11 @@ export default function App() {
     setLoadingAnalyze(true);
     setError(null);
     setResult(null);
+    setMatchResult(null);
+    setSuggestionsResult(null);
+    setTailoredResumeResult(null);
+    setResumeValidationMessage(null);
+    setJobDescriptionValidationMessage(null);
     try {
       const body = new FormData();
       body.append("file", file);
@@ -95,6 +183,16 @@ export default function App() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(formatApiErrorMessage(data.error, res.status));
+      }
+      if (isResumeRejectedResponse(data)) {
+        applyResumeRejection(data.message, {
+          setResumeValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+        });
+        return;
       }
       setResult(data);
     } catch (e) {
@@ -148,8 +246,35 @@ export default function App() {
   const matchResumeToJob = useCallback(async () => {
     setLoadingMatch(true);
     setError(null);
+    setResult(null);
+    setMatchResult(null);
+    setSuggestionsResult(null);
+    setTailoredResumeResult(null);
+    setResumeValidationMessage(null);
+    setJobDescriptionValidationMessage(null);
     try {
       const data = await postJobAnalysis("/api/match-jd");
+      if (isInvalidJdResponse(data)) {
+        applyJobDescriptionRejection(data.message, {
+          setJobDescriptionValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+          setResumeValidationMessage,
+        });
+        return;
+      }
+      if (isResumeRejectedResponse(data)) {
+        applyResumeRejection(data.message, {
+          setResumeValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+        });
+        return;
+      }
       setMatchResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -161,8 +286,35 @@ export default function App() {
   const suggestImprovements = useCallback(async () => {
     setLoadingSuggestions(true);
     setError(null);
+    setResult(null);
+    setMatchResult(null);
+    setSuggestionsResult(null);
+    setTailoredResumeResult(null);
+    setResumeValidationMessage(null);
+    setJobDescriptionValidationMessage(null);
     try {
       const data = await postJobAnalysis("/api/jd-suggestions");
+      if (isInvalidJdResponse(data)) {
+        applyJobDescriptionRejection(data.message, {
+          setJobDescriptionValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+          setResumeValidationMessage,
+        });
+        return;
+      }
+      if (isResumeRejectedResponse(data)) {
+        applyResumeRejection(data.message, {
+          setResumeValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+        });
+        return;
+      }
       setSuggestionsResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -174,8 +326,35 @@ export default function App() {
   const generateTailoredResume = useCallback(async () => {
     setLoadingTailoredResume(true);
     setError(null);
+    setResult(null);
+    setMatchResult(null);
+    setSuggestionsResult(null);
+    setTailoredResumeResult(null);
+    setResumeValidationMessage(null);
+    setJobDescriptionValidationMessage(null);
     try {
       const data = await postJobAnalysis("/api/tailored-resume");
+      if (isInvalidJdResponse(data)) {
+        applyJobDescriptionRejection(data.message, {
+          setJobDescriptionValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+          setResumeValidationMessage,
+        });
+        return;
+      }
+      if (isResumeRejectedResponse(data)) {
+        applyResumeRejection(data.message, {
+          setResumeValidationMessage,
+          setResult,
+          setMatchResult,
+          setSuggestionsResult,
+          setTailoredResumeResult,
+        });
+        return;
+      }
       setTailoredResumeResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -185,7 +364,13 @@ export default function App() {
   }, [postJobAnalysis]);
 
   const showResults =
-    extractedText != null || result || matchResult || suggestionsResult || tailoredResumeResult;
+    extractedText != null ||
+    result ||
+    matchResult ||
+    suggestionsResult ||
+    tailoredResumeResult ||
+    resumeValidationMessage ||
+    jobDescriptionValidationMessage;
 
   return (
     <div className="app-shell">
@@ -234,78 +419,68 @@ export default function App() {
             className="text-area-field"
           />
           <div className="btn-row">
-            <button
-              type="button"
+            <ActionButton
+              actionId="extract"
+              label="Extract text"
+              description="Pulls readable text from the uploaded PDF so you can preview what the system sees."
               onClick={uploadPdf}
               disabled={busy || !file}
-              className="btn btn--ghost"
-            >
-              {loadingUpload ? (
-                <>
-                  <Spinner />
-                  Extracting…
-                </>
-              ) : (
-                "Extract text"
-              )}
-            </button>
-            <button type="submit" disabled={busy || !file} className="btn btn--primary">
-              {loadingAnalyze ? (
-                <>
-                  <Spinner />
-                  Analyzing…
-                </>
-              ) : (
-                "Analyze with AI"
-              )}
-            </button>
+              loading={loadingUpload}
+              loadingLabel="Extracting…"
+              variant="ghost"
+              openActionInfo={openActionInfo}
+              setOpenActionInfo={setOpenActionInfo}
+            />
+            <ActionButton
+              actionId="analyze"
+              label="Analyze with AI"
+              description="Reviews the resume for ATS fit, strengths, and likely missing skills."
+              buttonType="submit"
+              disabled={busy || !file}
+              loading={loadingAnalyze}
+              loadingLabel="Analyzing…"
+              variant="primary"
+              openActionInfo={openActionInfo}
+              setOpenActionInfo={setOpenActionInfo}
+            />
           </div>
           <div className="btn-row btn-row--secondary">
-            <button
-              type="button"
+            <ActionButton
+              actionId="match"
+              label="Match Resume with JD"
+              description="Compares the resume against the pasted job description and shows fit score plus JD-aligned skills."
               onClick={matchResumeToJob}
               disabled={busy || !file}
-              className="btn btn--ghost"
-            >
-              {loadingMatch ? (
-                <>
-                  <Spinner />
-                  Matching…
-                </>
-              ) : (
-                "Match Resume with JD"
-              )}
-            </button>
-            <button
-              type="button"
+              loading={loadingMatch}
+              loadingLabel="Matching…"
+              variant="ghost"
+              openActionInfo={openActionInfo}
+              setOpenActionInfo={setOpenActionInfo}
+            />
+            <ActionButton
+              actionId="suggest"
+              label="Suggest Improvements"
+              description="Suggests resume improvements, missing skills, interview prep, and readiness tips from the JD."
               onClick={suggestImprovements}
               disabled={busy || !file}
-              className="btn btn--ghost"
-            >
-              {loadingSuggestions ? (
-                <>
-                  <Spinner />
-                  Generating suggestions…
-                </>
-              ) : (
-                "Suggest Improvements"
-              )}
-            </button>
-            <button
-              type="button"
+              loading={loadingSuggestions}
+              loadingLabel="Generating suggestions…"
+              variant="ghost"
+              openActionInfo={openActionInfo}
+              setOpenActionInfo={setOpenActionInfo}
+            />
+            <ActionButton
+              actionId="tailor"
+              label="Generate Tailored Resume"
+              description="Builds an ATS-friendly resume draft using only the uploaded resume content and the JD."
               onClick={generateTailoredResume}
               disabled={busy || !file}
-              className="btn btn--ghost"
-            >
-              {loadingTailoredResume ? (
-                <>
-                  <Spinner />
-                  Drafting tailored resume…
-                </>
-              ) : (
-                "Generate Tailored Resume"
-              )}
-            </button>
+              loading={loadingTailoredResume}
+              loadingLabel="Drafting tailored resume…"
+              variant="ghost"
+              openActionInfo={openActionInfo}
+              setOpenActionInfo={setOpenActionInfo}
+            />
           </div>
           {error && (
             <p className="alert--error" role="alert">
@@ -317,7 +492,14 @@ export default function App() {
 
       {showResults && (
         <div className="result-stack">
-          {extractedText != null && (
+          {resumeValidationMessage ? (
+            <ResumeValidationCard message={resumeValidationMessage} />
+          ) : null}
+          {jobDescriptionValidationMessage ? (
+            <JobDescriptionValidationCard message={jobDescriptionValidationMessage} />
+          ) : null}
+
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && extractedText != null && (
             <article className="card">
               <div className="card__head">
                 <div>
@@ -329,26 +511,36 @@ export default function App() {
             </article>
           )}
 
-          {result && <Results data={result} />}
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && result && (
+            <Results data={result} />
+          )}
 
-          {loadingMatch && <LoadingCard title="Resume vs JD match" body="Scoring fit and extracting matched skills…" />}
-          {matchResult && <JobMatchResults data={matchResult} />}
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && loadingMatch && (
+            <LoadingCard title="Resume vs JD match" body="Scoring fit and extracting matched skills…" />
+          )}
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && matchResult && (
+            <JobMatchResults data={matchResult} />
+          )}
 
-          {loadingSuggestions && (
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && loadingSuggestions && (
             <LoadingCard
               title="JD-based suggestions"
               body="Generating improvement ideas, missing skills, and interview prep…"
             />
           )}
-          {suggestionsResult && <SuggestionsResults data={suggestionsResult} />}
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && suggestionsResult && (
+            <SuggestionsResults data={suggestionsResult} />
+          )}
 
-          {loadingTailoredResume && (
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && loadingTailoredResume && (
             <LoadingCard
               title="Tailored resume"
               body="Building an ATS-friendly tailored resume draft from your existing resume…"
             />
           )}
-          {tailoredResumeResult && <TailoredResumeResults data={tailoredResumeResult} />}
+          {!resumeValidationMessage && !jobDescriptionValidationMessage && tailoredResumeResult && (
+            <TailoredResumeResults data={tailoredResumeResult} />
+          )}
         </div>
       )}
     </div>
@@ -543,6 +735,32 @@ function TailoredResumeResults({ data }) {
   );
 }
 
+function ResumeValidationCard({ message }) {
+  return (
+    <article className="card card--rejection">
+      <div className="card__head">
+        <div>
+          <h2 className="card__title">Invalid resume upload</h2>
+          <p className="card__subtitle card__subtitle--flush">{message}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function JobDescriptionValidationCard({ message }) {
+  return (
+    <article className="card card--rejection">
+      <div className="card__head">
+        <div>
+          <h2 className="card__title">Invalid job description</h2>
+          <p className="card__subtitle card__subtitle--flush">{message}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function ResumeSection({ title, items }) {
   if (!items?.length) return null;
 
@@ -570,4 +788,30 @@ function formatApiErrorMessage(message, status) {
     text += " (Backend: edit server/.env, then restart the API server.)";
   }
   return text;
+}
+
+function isResumeRejectedResponse(data) {
+  return data?.isResume === false && typeof data?.message === "string";
+}
+
+function isInvalidJdResponse(data) {
+  return data?.isValidJD === false && typeof data?.message === "string";
+}
+
+function applyResumeRejection(message, setters) {
+  setters.setResumeValidationMessage(message);
+  setters.setJobDescriptionValidationMessage?.(null);
+  setters.setResult(null);
+  setters.setMatchResult(null);
+  setters.setSuggestionsResult(null);
+  setters.setTailoredResumeResult(null);
+}
+
+function applyJobDescriptionRejection(message, setters) {
+  setters.setJobDescriptionValidationMessage(message);
+  setters.setResumeValidationMessage(null);
+  setters.setResult(null);
+  setters.setMatchResult(null);
+  setters.setSuggestionsResult(null);
+  setters.setTailoredResumeResult(null);
 }

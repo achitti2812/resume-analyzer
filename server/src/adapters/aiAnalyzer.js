@@ -30,7 +30,12 @@ Rules:
 - missingSkills: 3-8 important skills, tools, or requirements present in the job description but not clearly supported by the resume.
 - summary: concise, professional, evidence-based.
 - Use only information found in the provided resume text and job description.
-- Do not invent experience, employers, projects, certifications, tools, or achievements.`;
+- Do not invent experience, employers, projects, certifications, tools, or achievements.
+- IMPORTANT:
+  - Only use the provided job description text.
+  - Do NOT assume missing details.
+  - Do NOT add technologies or skills not explicitly mentioned.
+  - If the job description lacks sufficient detail, respond: "Insufficient job description to perform analysis."`;
 
 const jobSuggestionsPrompt = `You are an expert resume coach improving a resume for a specific job description.
 
@@ -44,7 +49,12 @@ Rules:
 - readinessTips: 3-6 practical next steps to improve readiness for this role.
 - Base every item on the resume text and the job description.
 - Do not invent experience, projects, metrics, certifications, or qualifications the resume does not support.
-- Keep each item concise and professional.`;
+- Keep each item concise and professional.
+- IMPORTANT:
+  - Only use the provided job description text.
+  - Do NOT assume missing details.
+  - Do NOT add technologies or skills not explicitly mentioned.
+  - If the job description lacks sufficient detail, respond: "Insufficient job description to perform analysis."`;
 
 const tailoredResumePrompt = `You are an expert ATS resume writer tailoring a resume to a job description.
 
@@ -59,7 +69,26 @@ Rules:
 - summary: 2-4 sentences, professional and ATS-friendly.
 - skills: only skills clearly supported by the resume and relevant to the JD.
 - experience/projects/education: concise bullet lines suitable for a tailored resume draft.
-- Prefer strong wording and ordering, but only from supported resume content.`;
+- Prefer strong wording and ordering, but only from supported resume content.
+- IMPORTANT:
+  - Only use the provided job description text.
+  - Do NOT assume missing details.
+  - Do NOT add technologies or skills not explicitly mentioned.
+  - If the job description lacks sufficient detail, respond: "Insufficient job description to perform analysis."`;
+
+const resumeClassifierPrompt = `You are classifying uploaded PDF text.
+
+Respond with ONLY valid JSON (no markdown fence) in exactly this shape:
+{"isResume": <true|false>, "reason": "<single sentence reason>"}
+
+Rules:
+- Decide whether the text is a professional resume/CV.
+- A resume typically includes work experience, education, skills, projects, contact information, or a professional summary.
+- Non-resume documents include itineraries, tickets, invoices, receipts, booking confirmations, bills, manuals, letters, and forms.
+- Be conservative: if the text clearly is not a resume, return false.
+- reason must be concise and specific.
+- If false, say what the document appears to be.
+- If true, say that it appears to be a professional resume.`;
 
 function getCleanApiKey(value) {
   const raw = (value || "").trim();
@@ -96,7 +125,8 @@ export async function analyzeJobMatchWithAi(resumeText, jobDescription) {
   return runAiJsonTask({
     systemPrompt: jobMatchPrompt,
     userPrompt: buildResumeJobInput(resumeText, jobDescription),
-    normalize: normalizeJobMatchAnalysis,
+    normalize: (parsed) =>
+      groundJobMatchAnalysis(normalizeJobMatchAnalysis(parsed), jobDescription),
   });
 }
 
@@ -108,7 +138,7 @@ export async function analyzeJobSuggestionsWithAi(resumeText, jobDescription) {
   return runAiJsonTask({
     systemPrompt: jobSuggestionsPrompt,
     userPrompt: buildResumeJobInput(resumeText, jobDescription),
-    normalize: normalizeJobSuggestions,
+    normalize: (parsed) => groundJobSuggestions(normalizeJobSuggestions(parsed), jobDescription),
   });
 }
 
@@ -120,7 +150,19 @@ export async function generateTailoredResumeWithAi(resumeText, jobDescription) {
   return runAiJsonTask({
     systemPrompt: tailoredResumePrompt,
     userPrompt: buildResumeJobInput(resumeText, jobDescription),
-    normalize: normalizeTailoredResume,
+    normalize: (parsed) => groundTailoredResume(normalizeTailoredResume(parsed), jobDescription),
+  });
+}
+
+/**
+ * @param {string} text
+ * @returns {Promise<{ isResume: boolean; reason: string }>}
+ */
+export async function classifyResumeTextWithAi(text) {
+  return runAiJsonTask({
+    systemPrompt: resumeClassifierPrompt,
+    userPrompt: `Document text:\n\n${text}`,
+    normalize: normalizeResumeClassification,
   });
 }
 
@@ -276,6 +318,119 @@ async function analyzeWithOpenAi(apiKey, systemPrompt, userPrompt, normalize) {
 
 function buildResumeJobInput(resumeText, jobDescription) {
   return `Resume text:\n\n${resumeText}\n\nJob description:\n\n${jobDescription}`;
+}
+
+/**
+ * @param {unknown} parsed
+ * @returns {{ isResume: boolean; reason: string }}
+ */
+function normalizeResumeClassification(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Resume classification payload is not an object.");
+  }
+  const p = /** @type {Record<string, unknown>} */ (parsed);
+  const isResume = p.isResume;
+  const reason = typeof p.reason === "string" ? p.reason.trim() : "";
+
+  if (typeof isResume !== "boolean") {
+    throw new Error("Invalid resume classification from AI.");
+  }
+  if (!reason) {
+    throw new Error("Missing resume classification reason from AI.");
+  }
+  return { isResume, reason };
+}
+
+/**
+ * @param {{ matchPercentage: number; matchedSkills: string[]; missingSkills: string[]; summary: string }} data
+ * @param {string} jobDescription
+ */
+function groundJobMatchAnalysis(data, jobDescription) {
+  if (containsInsufficientJdMessage(data.summary)) {
+    throw new Error("Insufficient job description to perform analysis.");
+  }
+
+  return {
+    ...data,
+    matchedSkills: filterItemsByJobDescription(data.matchedSkills, jobDescription),
+    missingSkills: filterItemsByJobDescription(data.missingSkills, jobDescription),
+  };
+}
+
+/**
+ * @param {{ improvements: string[]; missingSkills: string[]; interviewPrep: string[]; readinessTips: string[] }} data
+ * @param {string} jobDescription
+ */
+function groundJobSuggestions(data, jobDescription) {
+  const invalid = [...data.improvements, ...data.interviewPrep, ...data.readinessTips].some(
+    containsInsufficientJdMessage
+  );
+  if (invalid) {
+    throw new Error("Insufficient job description to perform analysis.");
+  }
+
+  return {
+    ...data,
+    missingSkills: filterItemsByJobDescription(data.missingSkills, jobDescription),
+  };
+}
+
+/**
+ * @param {{ summary: string; skills: string[]; experience: string[]; projects: string[]; education: string[] }} data
+ * @param {string} jobDescription
+ */
+function groundTailoredResume(data, jobDescription) {
+  if (containsInsufficientJdMessage(data.summary)) {
+    throw new Error("Insufficient job description to perform analysis.");
+  }
+
+  return {
+    ...data,
+    skills: filterItemsByJobDescription(data.skills, jobDescription),
+  };
+}
+
+/**
+ * @param {string} value
+ */
+function containsInsufficientJdMessage(value) {
+  return (
+    typeof value === "string" &&
+    value.trim().toLowerCase() === "insufficient job description to perform analysis."
+  );
+}
+
+/**
+ * @param {string[]} items
+ * @param {string} jobDescription
+ */
+function filterItemsByJobDescription(items, jobDescription) {
+  return items.filter((item) => itemAppearsInJobDescription(item, jobDescription));
+}
+
+/**
+ * @param {string} item
+ * @param {string} jobDescription
+ */
+function itemAppearsInJobDescription(item, jobDescription) {
+  const normalizedItem = item.toLowerCase().trim();
+  if (!normalizedItem) return false;
+
+  const lowerJd = jobDescription.toLowerCase();
+  if (lowerJd.includes(normalizedItem)) {
+    return true;
+  }
+
+  const tokens = normalizedItem
+    .split(/[^a-z0-9+#./-]+/i)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3);
+
+  if (!tokens.length) {
+    return false;
+  }
+
+  return tokens.every((token) => lowerJd.includes(token));
 }
 
 function truncate(s, max) {
