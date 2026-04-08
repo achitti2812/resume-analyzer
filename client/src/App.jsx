@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 /** Same origin in dev (Vite proxies /api and /upload). Set VITE_API_URL when API is on another host. */
 const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
@@ -8,7 +8,6 @@ function Spinner() {
 }
 
 function ActionButton({
-  actionId,
   label,
   description,
   onClick,
@@ -16,53 +15,26 @@ function ActionButton({
   loading,
   loadingLabel,
   variant,
-  openActionInfo,
-  setOpenActionInfo,
   buttonType = "button",
 }) {
-  const isInfoOpen = openActionInfo === actionId;
-
-  const toggleInfo = useCallback(
-    (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpenActionInfo((current) => (current === actionId ? null : actionId));
-    },
-    [actionId, setOpenActionInfo]
-  );
-
   return (
-    <div className={`action-item${isInfoOpen ? " action-item--info-open" : ""}`}>
-      <div className="action-control">
-        <button
-          type={buttonType}
-          onClick={onClick}
-          disabled={disabled}
-          className={`btn ${variant === "primary" ? "btn--primary" : "btn--ghost"}`}
-          title={description}
-        >
-          {loading ? (
-            <>
-              <Spinner />
-              {loadingLabel}
-            </>
-          ) : (
-            label
-          )}
-        </button>
-        <button
-          type="button"
-          className="info-trigger"
-          aria-label={`About ${label}`}
-          aria-expanded={isInfoOpen}
-          onPointerDown={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={toggleInfo}
-        >
-          i
-        </button>
-      </div>
+    <div className="action-item">
+      <button
+        type={buttonType}
+        onClick={onClick}
+        disabled={disabled}
+        className={`btn ${variant === "primary" ? "btn--primary" : "btn--ghost"}`}
+        title={description}
+      >
+        {loading ? (
+          <>
+            <Spinner />
+            {loadingLabel}
+          </>
+        ) : (
+          label
+        )}
+      </button>
       <span className="action-tooltip" role="tooltip">
         {description}
       </span>
@@ -86,7 +58,6 @@ export default function App() {
   const [tailoredResumeResult, setTailoredResumeResult] = useState(null);
   const [resumeValidationMessage, setResumeValidationMessage] = useState(null);
   const [jobDescriptionValidationMessage, setJobDescriptionValidationMessage] = useState(null);
-  const [openActionInfo, setOpenActionInfo] = useState(null);
 
   const busy =
     loadingUpload ||
@@ -106,7 +77,6 @@ export default function App() {
     setTailoredResumeResult(null);
     setResumeValidationMessage(null);
     setJobDescriptionValidationMessage(null);
-    setOpenActionInfo(null);
   }, []);
 
   const onJobDescriptionChange = useCallback((e) => {
@@ -114,20 +84,6 @@ export default function App() {
     setError(null);
     setJobDescriptionValidationMessage(null);
   }, []);
-
-  useEffect(() => {
-    if (!openActionInfo) return undefined;
-
-    function handleDocumentClick(event) {
-      const target = event.target;
-      if (!(target instanceof Element) || !target.closest(".action-item")) {
-        setOpenActionInfo(null);
-      }
-    }
-
-    document.addEventListener("click", handleDocumentClick);
-    return () => document.removeEventListener("click", handleDocumentClick);
-  }, [openActionInfo]);
 
   const uploadPdf = useCallback(async () => {
     if (!file) {
@@ -423,7 +379,6 @@ export default function App() {
           />
           <div className="btn-row">
             <ActionButton
-              actionId="extract"
               label="Extract text"
               description="Pulls readable text from the uploaded PDF so you can preview what the system sees."
               onClick={uploadPdf}
@@ -431,11 +386,8 @@ export default function App() {
               loading={loadingUpload}
               loadingLabel="Extracting…"
               variant="ghost"
-              openActionInfo={openActionInfo}
-              setOpenActionInfo={setOpenActionInfo}
             />
             <ActionButton
-              actionId="analyze"
               label="Analyze with AI"
               description="Reviews the resume for ATS fit, strengths, and likely missing skills."
               buttonType="submit"
@@ -443,13 +395,10 @@ export default function App() {
               loading={loadingAnalyze}
               loadingLabel="Analyzing…"
               variant="primary"
-              openActionInfo={openActionInfo}
-              setOpenActionInfo={setOpenActionInfo}
             />
           </div>
           <div className="btn-row btn-row--secondary">
             <ActionButton
-              actionId="match"
               label="Match Resume with JD"
               description="Compares the resume against the pasted job description and shows fit score plus JD-aligned skills."
               onClick={matchResumeToJob}
@@ -457,11 +406,8 @@ export default function App() {
               loading={loadingMatch}
               loadingLabel="Matching…"
               variant="ghost"
-              openActionInfo={openActionInfo}
-              setOpenActionInfo={setOpenActionInfo}
             />
             <ActionButton
-              actionId="suggest"
               label="Suggest Improvements"
               description="Suggests resume improvements, missing skills, interview prep, and readiness tips from the JD."
               onClick={suggestImprovements}
@@ -469,11 +415,8 @@ export default function App() {
               loading={loadingSuggestions}
               loadingLabel="Generating suggestions…"
               variant="ghost"
-              openActionInfo={openActionInfo}
-              setOpenActionInfo={setOpenActionInfo}
             />
             <ActionButton
-              actionId="tailor"
               label="Generate Tailored Resume"
               description="Builds an ATS-friendly resume draft using only the uploaded resume content and the JD."
               onClick={generateTailoredResume}
@@ -481,8 +424,6 @@ export default function App() {
               loading={loadingTailoredResume}
               loadingLabel="Drafting tailored resume…"
               variant="ghost"
-              openActionInfo={openActionInfo}
-              setOpenActionInfo={setOpenActionInfo}
             />
           </div>
           {error && (

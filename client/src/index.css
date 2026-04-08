@@ -300,27 +300,6 @@ body {
   position: relative;
 }
 
-.action-control {
-  display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
-}
-
-.info-trigger {
-  display: none;
-  flex: 0 0 2.25rem;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--muted);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
 .action-tooltip {
   position: absolute;
   left: 50%;
@@ -355,12 +334,6 @@ body {
 .action-item:focus-within .action-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
-}
-
-.action-item--info-open .action-tooltip {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-  pointer-events: auto;
 }
 
 .btn {
@@ -398,23 +371,6 @@ body {
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-@media (hover: none), (pointer: coarse) {
-  .info-trigger {
-    display: inline-flex;
-  }
-
-  .action-item:hover .action-tooltip,
-  .action-item:focus-within .action-tooltip {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px);
-  }
-
-  .action-item--info-open .action-tooltip {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
 }
 
 .alert--error {
