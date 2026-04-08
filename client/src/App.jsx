@@ -56,7 +56,6 @@ function ActionButton({
           aria-label={`About ${label}`}
           aria-expanded={isInfoOpen}
           onPointerDown={(event) => {
-            event.preventDefault();
             event.stopPropagation();
           }}
           onClick={toggleInfo}
